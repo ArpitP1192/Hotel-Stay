@@ -1,0 +1,244 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+
+<PageTitle>Home</PageTitle>
+<h1>Hotel Search</h1>
+<div class="card p-3 mb-3">
+    <div class="row g-3">
+        <div class="col-12 col-md-3">
+            <label class="form-label">Destination</label>
+            <select class="form-select" @bind="Destination">
+                <option value="London">London</option>
+                <option value="Delhi">Delhi</option>
+                <option value="Paris">Paris</option>
+                <option value="Tokyo">Tokyo</option>
+                <option value="Bangalore">Bangalore</option>
+                <option value="New York">New York</option>
+            </select>
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label">Check-in</label>
+            <input type="date" class="form-control" @bind="CheckInDate" />
+        </div>
+
+        <div class="col-6 col-md-2">
+            <label class="form-label">Check-out</label>
+            <input type="date" class="form-control" @bind="CheckOutDate" />
+        </div>
+
+        <div class="col-12 col-md-3">
+            <label class="form-label">Room Type (optional)</label>
+            <select class="form-select" @bind="SelectedRoomTypeString">
+                <option value="">Any</option>
+                <option>Standard</option>
+                <option>Deluxe</option>
+                <option>Suite</option>
+            </select>
+        </div>
+
+        <div class="col-12 col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary w-100" @onclick="SearchAsync">Search</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(SearchError))
+        {
+            <div class="col-12">
+                <div class="alert alert-danger mt-1">@SearchError</div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(BookingReference))
+{
+    <div class="alert alert-success mb-3">Booking confirmed — Reference: <strong>@BookingReference</strong></div>
+}
+
+@if (Offers is not null && Offers.Any())
+{
+    <h2>Results</h2>
+    <div class="list-group mb-3" style="max-height:36rem; overflow:auto;">
+        @foreach (var Offer in Offers)
+        {
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <strong>@Offer.Provider</strong> — @Offer.RoomType
+                        <div>RatePerNight: @Offer.RatePerNight</div>
+                        <div>Total Price: @Offer.TotalPrice</div>
+                        @if (!string.IsNullOrWhiteSpace(Offer.Amenities))
+                        {
+                            <div>Amenities: @Offer.Amenities</div>
+                        }
+                        @if (Offer.StarRating is not null)
+                        {
+                            <div>StarRating: @Offer.StarRating</div>
+                        }
+                        @if (Offer.Cancellation is not null)
+                        {
+                            <div>Cancellation: @Offer.Cancellation.Type @((Offer.Cancellation.HoursBeforeCheckIn is null) ? "" : $"up to {Offer.Cancellation.HoursBeforeCheckIn}h")</div>
+                        }
+                    </div>
+                    <div class="text-end">
+                        <button class="btn btn-outline-primary" @onclick="() => SelectOffer(Offer)">Book</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (SelectedOffer is not null)
+{
+    <h2>Book: @SelectedOffer.Provider — @SelectedOffer.RoomType</h2>
+    <div class="card p-3 mb-3">
+        <div class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label">Guest Name</label>
+                <input class="form-control" @bind="BookingModel.GuestName" />
+            </div>
+
+            <div class="col-6 col-md-4">
+                <label class="form-label">Document Type</label>
+                <select class="form-select" @bind="BookingModel.DocumentType">
+                    <option value="Passport">Passport</option>
+                    <option value="NationalId">NationalId</option>
+                </select>
+            </div>
+
+            <div class="col-6 col-md-4">
+                <label class="form-label">Document Number</label>
+                <input class="form-control" @bind="BookingModel.DocumentNumber" />
+            </div>
+
+            <div class="col-6 col-md-4">
+                <label class="form-label">Destination</label>
+                <input class="form-control" @bind="BookingModel.Destination" readonly />
+            </div>
+
+            <div class="col-6 col-md-4">
+                <label class="form-label">TotalPrice</label>
+                <input class="form-control" @bind="BookingModel.TotalPrice" readonly />
+            </div>
+
+            <div class="col-12 col-md-4 d-flex align-items-end">
+                <div class="w-100">
+                    @if (!string.IsNullOrEmpty(BookingError))
+                    {
+                        <div class="alert alert-danger">@BookingError</div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-success" @onclick="OpenConfirmationAsync">Confirm Booking</button>
+                <button class="btn btn-secondary" @onclick="CancelBooking">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+<h2>Lookup Reservation</h2>
+<div class="card p-3 mb-3">
+    <div class="row g-3 align-items-end">
+        <div class="col-12 col-md-8">
+            <label class="form-label">Reference</label>
+            <input class="form-control" @bind="LookupReference" />
+        </div>
+
+        <div class="col-12 col-md-4 d-grid">
+            <button class="btn btn-primary w-100" @onclick="LookupAsync">Lookup</button>
+        </div>
+
+        <div class="col-12">
+            @if (LookupError is not null)
+            {
+                <div class="alert alert-danger mt-2">@LookupError</div>
+            }
+        </div>
+
+        @if (FoundReservation is not null)
+        {
+            <div class="col-12">
+                <div class="mt-3">
+                    <div class="row">
+                        <div class="col-12 col-md-6"><strong>Reference No:</strong> @FoundReservation.Reference</div>
+                        <div class="col-12 col-md-6"><strong>Provider:</strong> @FoundReservation.Provider</div>
+                        <div class="col-12 col-md-6"><strong>Guest Name:</strong> @FoundReservation.GuestName</div>
+                        <div class="col-12 col-md-6"><strong>Room Type:</strong> @FoundReservation.RoomType</div>
+                        <div class="col-12 col-md-6"><strong>Total Price:</strong> @FoundReservation.TotalPrice</div>
+                        <div class="col-12 col-md-6"><strong>Reserved At:</strong> @FoundReservation.ReservedAt.ToLocalTime()</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Confirmation modal (before sending to API) -->
+@if (ShowConfirmModal)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1040;"></div>
+    <div style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:1050;">
+        <div class="card" style="width:100%; max-width:520px;">
+            <div class="card-header">
+                <strong>Confirm Booking</strong>
+            </div>
+            <div class="card-body">
+                <p>Are you sure you want to confirm this booking?</p>
+
+                <dl class="row">
+                    <dt class="col-5">Provider</dt>
+                    <dd class="col-7">@BookingModel.Provider</dd>
+
+                    <dt class="col-5">Room Type</dt>
+                    <dd class="col-7">@BookingModel.RoomType</dd>
+
+                    <dt class="col-5">Guest Name</dt>
+                    <dd class="col-7">@BookingModel.GuestName</dd>
+
+                    <dt class="col-5">Document</dt>
+                    <dd class="col-7">@BookingModel.DocumentType — @BookingModel.DocumentNumber</dd>
+
+                    <dt class="col-5">Destination</dt>
+                    <dd class="col-7">@BookingModel.Destination</dd>
+
+                    <dt class="col-5">Total Price</dt>
+                    <dd class="col-7">@BookingModel.TotalPrice</dd>
+
+                    @if (SelectedOffer?.Cancellation is not null)
+                    {
+                        <dt class="col-5">Cancellation</dt>
+                        <dd class="col-7">@SelectedOffer.Cancellation.Type @((SelectedOffer.Cancellation.HoursBeforeCheckIn is null) ? "" : $"up to {SelectedOffer.Cancellation.HoursBeforeCheckIn}h")</dd>
+                    }
+                </dl>
+            </div>
+            <div class="card-footer text-end">
+                <button class="btn btn-secondary me-2" @onclick="CloseConfirmModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmAndSubmitAsync">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Success modal (after API returns reference) -->
+@if (ShowBookingModal)
+{
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1040;"></div>
+    <div style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:1050;">
+        <div class="card" style="width:100%; max-width:420px;">
+            <div class="card-header">
+                <strong>Booking Confirmed</strong>
+            </div>
+            <div class="card-body">
+                <p class="mb-2">Your booking reference:</p>
+                <h5><strong>@BookingReference</strong></h5>
+            </div>
+            <div class="card-footer text-end">
+                <button class="btn btn-primary" @onclick="CloseBookingModal">OK</button>
+            </div>
+        </div>
+    </div>
+}
