@@ -80,16 +80,33 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
     {
         using var client = _factory.CreateClient();
 
+        // Search first so a real offer exists in OfferCache
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var checkIn = today;
+        var checkOut = today.AddDays(1);
+        var searchUrl = $"/hotels/search?destination=Bangalore&checkIn={checkIn:yyyy-MM-dd}&checkOut={checkOut:yyyy-MM-dd}";
+
+        var searchResp = await client.GetAsync(searchUrl);
+        Assert.Equal(HttpStatusCode.OK, searchResp.StatusCode);
+
+        var offers = await searchResp.Content.ReadFromJsonAsync<List<JsonElement>>(_jsonOptions);
+        Assert.NotNull(offers);
+        Assert.NotEmpty(offers);
+
+        var firstOffer = offers[0];
+        var offerId = firstOffer.GetProperty("OfferId").GetString();
+        var provider = firstOffer.GetProperty("Provider").GetString();
+
         var req = new
         {
-            OfferId = "BudgetNests:BN-LON-STD-1",
+            OfferId = offerId,           // real, cached OfferId — required
             GuestName = "Test Guest",
-            DocumentType = (int)1, // NationalId
+            DocumentType = (int)1,       // NationalId
             DocumentNumber = "NI-67890",
             Destination = "Bangalore",
-            TotalPrice = 80.0m,
-            Provider = "BudgetNests",
-            RoomType = (int)0 // Standard
+            TotalPrice = 999.0m,         // deliberately wrong — server must ignore this
+            Provider = provider,
+            RoomType = (int)0
         };
 
         var content = new StringContent(JsonSerializer.Serialize(req, _jsonOptions), Encoding.UTF8, "application/json");
@@ -101,6 +118,7 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(reservation);
         Assert.False(string.IsNullOrWhiteSpace(reservation.Reference));
         Assert.StartsWith("HS-", reservation.Reference);
+        Assert.NotEqual(999.0m, reservation.TotalPrice); // proves tampered price was overridden
     }
 
     [Fact]
@@ -108,16 +126,32 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
     {
         using var client = _factory.CreateClient();
 
-        // First create a reservation
+        // Search first so the offer is added to OfferCache before we reserve it.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var checkIn = today;
+        var checkOut = today.AddDays(1);
+        var searchUrl = $"/hotels/search?destination=Delhi&checkIn={checkIn:yyyy-MM-dd}&checkOut={checkOut:yyyy-MM-dd}";
+
+        var searchResp = await client.GetAsync(searchUrl);
+        Assert.Equal(HttpStatusCode.OK, searchResp.StatusCode);
+
+        var offers = await searchResp.Content.ReadFromJsonAsync<List<JsonElement>>(_jsonOptions);
+        Assert.NotNull(offers);
+        Assert.NotEmpty(offers);
+
+        var firstOffer = offers[0];
+        var offerId = firstOffer.GetProperty("OfferId").GetString();
+        var provider = firstOffer.GetProperty("Provider").GetString();
+
         var req = new
         {
-            OfferId = "BudgetNests:BN-LON-STD-1",
+            OfferId = offerId,
             GuestName = "Lookup Guest",
             DocumentType = (int)1,
             DocumentNumber = "NI-00001",
             Destination = "Delhi",
-            TotalPrice = 80.0m,
-            Provider = "BudgetNests",
+            TotalPrice = 1.0m, // deliberately wrong — server must ignore this
+            Provider = provider,
             RoomType = (int)0
         };
 
@@ -129,7 +163,6 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(created);
         Assert.False(string.IsNullOrWhiteSpace(created.Reference));
 
-        // Now lookup
         var getResp = await client.GetAsync($"/hotels/reservation/{Uri.EscapeDataString(created.Reference)}");
         Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
 
