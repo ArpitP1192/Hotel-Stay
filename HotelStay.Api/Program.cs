@@ -23,7 +23,7 @@ var app = builder.Build();
 
 app.UseCors("AllowAll");
 
-var internationalCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York", "London" };
+var internationalCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York","London" };
 var domesticCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Bangalore", "Delhi" };
 
 app.MapGet("/hotels/search", async (HttpContext http, IEnumerable<IHotelProvider> providers) =>
