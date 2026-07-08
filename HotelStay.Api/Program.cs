@@ -23,7 +23,7 @@ var app = builder.Build();
 
 app.UseCors("AllowAll");
 
-var internationalCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York","London" };
+var internationalCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York", "London" };
 var domesticCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Bangalore", "Delhi" };
 
 app.MapGet("/hotels/search", async (HttpContext http, IEnumerable<IHotelProvider> providers) =>
@@ -68,6 +68,12 @@ app.MapGet("/hotels/search", async (HttpContext http, IEnumerable<IHotelProvider
 
     var aggregated = results.SelectMany(r => r).OrderBy(o => o.TotalPrice).ToArray();
 
+    // --- cache each returned offer so /hotels/reserve can verify against it later ---
+    foreach (var offer in aggregated)
+    {
+        OfferCache.Offers[offer.OfferId] = offer;
+    }
+
     return Results.Ok(aggregated);
 });
 
@@ -108,11 +114,11 @@ app.MapPost("/hotels/reserve", (ReservationRequest req, IEnumerable<IHotelProvid
     if (provider is null)
         return Results.NotFound(new { error = $"Provider '{providerNameFromId}' not recognized." });
 
-    var providedRoomType = req.RoomType;
-
-    CancellationPolicy cancellation = provider.Name.Equals("PremierStays", StringComparison.OrdinalIgnoreCase)
-        ? new CancellationPolicy(CancellationPolicyType.FreeCancellation, 48)
-        : new CancellationPolicy(CancellationPolicyType.Flexible, 24);
+    // --- resolve the real offer from the search cache instead of trusting the client, it will Block the UI temper attacks ---
+    if (!OfferCache.Offers.TryGetValue(req.OfferId, out var matchedOffer))
+    {
+        return Results.NotFound(new { error = $"OfferId '{req.OfferId}' was not found. Please search again — offers expire." });
+    }
 
     var reference = "HS-" + GenerateReference(8);
 
@@ -120,9 +126,9 @@ app.MapPost("/hotels/reserve", (ReservationRequest req, IEnumerable<IHotelProvid
         Reference: reference,
         ReservedAt: DateTime.UtcNow,
         Provider: provider.Name,
-        RoomType: providedRoomType,
-        TotalPrice: req.TotalPrice,
-        Cancellation: cancellation,
+        RoomType: matchedOffer.RoomType,        // server-verified, not client-supplied
+        TotalPrice: matchedOffer.TotalPrice,     // server-verified, not client-supplied
+        Cancellation: matchedOffer.Cancellation, // server-verified, not client-supplied
         GuestName: req.GuestName
     );
 
@@ -154,5 +160,12 @@ static string GenerateReference(int length)
 static class ReservationStore
 {
     public static readonly ConcurrentDictionary<string, ReservationResult> Reservations = new();
+}
+
+// Offer cache — lets /hotels/reserve verify price/room type/cancellation against
+// what /hotels/search actually returned, without needing dates on ReservationRequest.
+static class OfferCache
+{
+    public static readonly ConcurrentDictionary<string, RoomOffer> Offers = new();
 }
 public partial class Program { }
