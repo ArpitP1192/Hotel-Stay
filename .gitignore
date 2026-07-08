@@ -1,0 +1,13 @@
+# Visual Studio / .NET
+**/bin/
+**/obj/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Mac OS files
+.DS_Store
+
+# Environment variables
+.env
