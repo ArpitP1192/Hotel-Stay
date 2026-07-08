@@ -1,5 +1,5 @@
 using System;
-using HotelStay.Api.Models;
+using HotelStay.Contracts.Models;
 
 namespace HotelStay.Api.Providers;
 public record HotelSearchQuery(

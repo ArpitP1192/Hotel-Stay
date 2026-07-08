@@ -56,38 +56,59 @@
     <div class="alert alert-success mb-3">Booking confirmed — Reference: <strong>@BookingReference</strong></div>
 }
 
-@if (Offers is not null && Offers.Any())
+@if (Offers is not null)
 {
-    <h2>Results</h2>
-    <div class="list-group mb-3" style="max-height:36rem; overflow:auto;">
-        @foreach (var Offer in Offers)
-        {
-            <div class="list-group-item">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <strong>@Offer.Provider</strong> — @Offer.RoomType
-                        <div>RatePerNight: @Offer.RatePerNight</div>
-                        <div>Total Price: @Offer.TotalPrice</div>
-                        @if (!string.IsNullOrWhiteSpace(Offer.Amenities))
-                        {
-                            <div>Amenities: @Offer.Amenities</div>
-                        }
-                        @if (Offer.StarRating is not null)
-                        {
-                            <div>StarRating: @Offer.StarRating</div>
-                        }
-                        @if (Offer.Cancellation is not null)
-                        {
-                            <div>Cancellation: @Offer.Cancellation.Type @((Offer.Cancellation.HoursBeforeCheckIn is null) ? "" : $"up to {Offer.Cancellation.HoursBeforeCheckIn}h")</div>
-                        }
-                    </div>
-                    <div class="text-end">
-                        <button class="btn btn-outline-primary" @onclick="() => SelectOffer(Offer)">Book</button>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="mb-0">Results</h2>
+        <div class="d-flex gap-2 align-items-center">
+            <label class="mb-0">Sort:</label>
+            <select class="form-select form-select-sm" style="width:auto" @onchange="OnSortChanged">
+                <option value="asc" selected>Price ↑</option>
+                <option value="desc">Price ↓</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!Offers.Any())
+    {
+        <div class="card mb-3">
+            <div class="card-body text-center text-muted">
+                No rooms available for the selected dates. Try different dates or destination.
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="list-group mb-3" style="max-height:36rem; overflow:auto;">
+            @foreach (var Offer in Offers)
+            {
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>@Offer.Provider</strong> — @Offer.RoomType
+                            <div>RatePerNight: @Offer.RatePerNight:C</div>
+                            <div>Total Price: @Offer.TotalPrice:C</div>
+                            @if (!string.IsNullOrWhiteSpace(Offer.Amenities))
+                            {
+                                <div>Amenities: @Offer.Amenities</div>
+                            }
+                            @if (Offer.StarRating is not null)
+                            {
+                                <div>StarRating: @Offer.StarRating</div>
+                            }
+                            @if (Offer.Cancellation is not null)
+                            {
+                                <div>Cancellation: @Offer.Cancellation.Type @((Offer.Cancellation.HoursBeforeCheckIn is null) ? "" : $"up to {Offer.Cancellation.HoursBeforeCheckIn}h")</div>
+                            }
+                        </div>
+                        <div class="text-end">
+                            <button class="btn btn-outline-primary" @onclick="() => SelectOffer(Offer)">Book</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        }
-    </div>
+            }
+        </div>
+    }
 }
 
 @if (SelectedOffer is not null)
@@ -144,7 +165,7 @@
 <div class="card p-3 mb-3">
     <div class="row g-3 align-items-end">
         <div class="col-12 col-md-8">
-            <label class="form-label">Reference</label>
+            <label class="form-label">Reference Number: </label>
             <input class="form-control" @bind="LookupReference" />
         </div>
 
@@ -164,7 +185,7 @@
             <div class="col-12">
                 <div class="mt-3">
                     <div class="row">
-                        <div class="col-12 col-md-6"><strong>Reference No:</strong> @FoundReservation.Reference</div>
+                        <div class="col-12 col-md-6"><strong>Reference No:</strong> @FoundReservation.ReferenceNumber </div>
                         <div class="col-12 col-md-6"><strong>Provider:</strong> @FoundReservation.Provider</div>
                         <div class="col-12 col-md-6"><strong>Guest Name:</strong> @FoundReservation.GuestName</div>
                         <div class="col-12 col-md-6"><strong>Room Type:</strong> @FoundReservation.RoomType</div>
@@ -228,13 +249,27 @@
 {
     <div style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1040;"></div>
     <div style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:1050;">
-        <div class="card" style="width:100%; max-width:420px;">
+        <div class="card" style="width:100%; max-width:480px;">
             <div class="card-header">
                 <strong>Booking Confirmed</strong>
             </div>
             <div class="card-body">
-                <p class="mb-2">Your booking reference:</p>
+                <p class="mb-1">Your booking reference:</p>
                 <h5><strong>@BookingReference</strong></h5>
+                @if (BookedOfferSnapshot is not null)
+                {
+                    <hr />
+                    <dl class="row">
+                        <dt class="col-5">Provider</dt>
+                        <dd class="col-7">@BookedOfferSnapshot.Provider</dd>
+                        <dt class="col-5">Room Type</dt>
+                        <dd class="col-7">@BookedOfferSnapshot.RoomType</dd>
+                        <dt class="col-5">Total Price</dt>
+                        <dd class="col-7">@BookedOfferSnapshot.TotalPrice:C</dd>
+                        <dt class="col-5">Cancellation</dt>
+                        <dd class="col-7">@BookedOfferSnapshot.Cancellation.Type @((BookedOfferSnapshot.Cancellation.HoursBeforeCheckIn is null) ? "" : $"up to {BookedOfferSnapshot.Cancellation.HoursBeforeCheckIn}h")</dd>
+                    </dl>
+                }
             </div>
             <div class="card-footer text-end">
                 <button class="btn btn-primary" @onclick="CloseBookingModal">OK</button>

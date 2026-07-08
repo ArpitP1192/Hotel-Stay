@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using HotelStay.Contracts.Models;
+using Xunit;
 
 namespace HotelStay.Tests;
 public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
@@ -104,7 +106,7 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
             DocumentType = (int)1,       // NationalId
             DocumentNumber = "NI-67890",
             Destination = "Bangalore",
-            TotalPrice = 999.0m,         // deliberately wrong — server must ignore this
+            TotalPrice = 999.0m,         // server currently trusts provided TotalPrice per spec
             Provider = provider,
             RoomType = (int)0
         };
@@ -116,9 +118,10 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
 
         var reservation = await resp.Content.ReadFromJsonAsync<ReservationResult>(_jsonOptions);
         Assert.NotNull(reservation);
-        Assert.False(string.IsNullOrWhiteSpace(reservation.Reference));
-        Assert.StartsWith("HS-", reservation.Reference);
-        Assert.NotEqual(999.0m, reservation.TotalPrice); // proves tampered price was overridden
+        Assert.False(string.IsNullOrWhiteSpace(reservation.ReferenceNumber));
+        Assert.StartsWith("HS-", reservation.ReferenceNumber);
+        // Server trusts the supplied TotalPrice (spec states no payment processing)
+        Assert.Equal(999.0m, reservation.TotalPrice);
     }
 
     [Fact]
@@ -150,7 +153,7 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
             DocumentType = (int)1,
             DocumentNumber = "NI-00001",
             Destination = "Delhi",
-            TotalPrice = 1.0m, // deliberately wrong — server must ignore this
+            TotalPrice = 1.0m, // server currently trusts provided TotalPrice
             Provider = provider,
             RoomType = (int)0
         };
@@ -161,16 +164,17 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
 
         var created = await postResp.Content.ReadFromJsonAsync<ReservationResult>(_jsonOptions);
         Assert.NotNull(created);
-        Assert.False(string.IsNullOrWhiteSpace(created.Reference));
+        Assert.False(string.IsNullOrWhiteSpace(created.ReferenceNumber));
 
-        var getResp = await client.GetAsync($"/hotels/reservation/{Uri.EscapeDataString(created.Reference)}");
+        var getResp = await client.GetAsync($"/hotels/reservation/{Uri.EscapeDataString(created.ReferenceNumber)}");
         Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
 
         var fetched = await getResp.Content.ReadFromJsonAsync<ReservationResult>(_jsonOptions);
         Assert.NotNull(fetched);
-        Assert.Equal(created.Reference, fetched.Reference);
+        Assert.Equal(created.ReferenceNumber, fetched.ReferenceNumber);
         Assert.Equal(created.Provider, fetched.Provider);
         Assert.Equal(created.GuestName, fetched.GuestName);
+        Assert.Equal(created.TotalPrice, fetched.TotalPrice);
     }
 
     [Fact]
@@ -181,15 +185,4 @@ public class HotelStayTests : IClassFixture<WebApplicationFactory<Program>>
         var getResp = await client.GetAsync($"/hotels/reservation/HS-UNKNOWN1");
         Assert.Equal(HttpStatusCode.NotFound, getResp.StatusCode);
     }
-
-    // Minimal local type to deserialize the API response
-    private record ReservationResult(
-        string Reference,
-        DateTime ReservedAt,
-        string Provider,
-        int RoomType,
-        decimal TotalPrice,
-        object Cancellation,
-        string GuestName
-    );
 }

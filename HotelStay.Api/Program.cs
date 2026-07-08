@@ -1,24 +1,29 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
-using HotelStay.Api.Models;
+using HotelStay.Contracts.Models;
 using HotelStay.Api.Providers;
+using HotelStay.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IHotelProvider, PremierStaysProvider>();
-builder.Services.AddSingleton<IHotelProvider, BudgetNestsProvider>();
+// CORS: allow any origin/method/header
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
-    });
+    options.AddPolicy("AllowAll", p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
-builder.Services.ConfigureHttpJsonOptions(options => {
-    options.SerializerOptions.PropertyNamingPolicy = null;
-});
+// Preserve PascalCase in JSON
+builder.Services.ConfigureHttpJsonOptions(opt => opt.SerializerOptions.PropertyNamingPolicy = null);
+
+// Register providers as singletons
+builder.Services.AddSingleton<IHotelProvider, PremierStaysProvider>();
+builder.Services.AddSingleton<IHotelProvider, BudgetNestsProvider>();
+
+// Register memory cache and the search service via interface
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IHotelSearchService, HotelSearchService>();
+
 var app = builder.Build();
 
 app.UseCors("AllowAll");
@@ -26,7 +31,8 @@ app.UseCors("AllowAll");
 var internationalCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York","London" };
 var domesticCities = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Bangalore", "Delhi" };
 
-app.MapGet("/hotels/search", async (HttpContext http, IEnumerable<IHotelProvider> providers) =>
+// GET /hotels/search
+app.MapGet("/hotels/search", async (HttpContext http, IHotelSearchService searchService, CancellationToken ct) =>
 {
     var q = http.Request.Query;
     var destination = q["destination"].ToString();
@@ -60,20 +66,8 @@ app.MapGet("/hotels/search", async (HttpContext http, IEnumerable<IHotelProvider
 
         roomType = rt;
     }
-
     var query = new HotelSearchQuery(destination, checkIn, checkOut, roomType);
-
-    var tasks = providers.Select(p => p.SearchAsync(query, default));
-    var results = await Task.WhenAll(tasks);
-
-    var aggregated = results.SelectMany(r => r).OrderBy(o => o.TotalPrice).ToArray();
-
-    // --- cache each returned offer so /hotels/reserve can verify against it later ---
-    foreach (var offer in aggregated)
-    {
-        OfferCache.Offers[offer.OfferId] = offer;
-    }
-
+    var aggregated = await searchService.SearchAsync(query, ct);
     return Results.Ok(aggregated);
 });
 
@@ -88,6 +82,7 @@ app.MapPost("/hotels/reserve", (ReservationRequest req, IEnumerable<IHotelProvid
     if (string.IsNullOrWhiteSpace(req.Provider))
         return Results.BadRequest(new { error = "Provider is required." });
 
+    // Document/destination validation
     if (internationalCities.Contains(req.Destination))
     {
         if (req.DocumentType != DocumentType.Passport)
@@ -106,7 +101,9 @@ app.MapPost("/hotels/reserve", (ReservationRequest req, IEnumerable<IHotelProvid
         return Results.NotFound(new { error = "OfferId did not resolve to a known provider/offer." });
 
     var providerNameFromId = parts[0];
+    var nativeId = parts[1];
 
+    // body provider must match OfferId prefix
     if (!string.Equals(req.Provider, providerNameFromId, StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Provider in request body does not match OfferId provider." });
 
@@ -114,24 +111,27 @@ app.MapPost("/hotels/reserve", (ReservationRequest req, IEnumerable<IHotelProvid
     if (provider is null)
         return Results.NotFound(new { error = $"Provider '{providerNameFromId}' not recognized." });
 
-    // --- resolve the real offer from the search cache instead of trusting the client, it will Block the UI temper attacks ---
-    if (!OfferCache.Offers.TryGetValue(req.OfferId, out var matchedOffer))
-    {
-        return Results.NotFound(new { error = $"OfferId '{req.OfferId}' was not found. Please search again — offers expire." });
-    }
+    // Use provided RoomType from the body
+    var providedRoomType = req.RoomType;
 
+    CancellationPolicy cancellation = provider.Name.Equals("PremierStays", StringComparison.OrdinalIgnoreCase)
+        ? new CancellationPolicy(CancellationPolicyType.FreeCancellation, 48)
+        : new CancellationPolicy(CancellationPolicyType.Flexible, 24);
+
+    // Generate HS-XXXXXXXX reference
     var reference = "HS-" + GenerateReference(8);
 
     var result = new ReservationResult(
-        Reference: reference,
+        ReferenceNumber: reference,
         ReservedAt: DateTime.UtcNow,
         Provider: provider.Name,
-        RoomType: matchedOffer.RoomType,        // server-verified, not client-supplied
-        TotalPrice: matchedOffer.TotalPrice,     // server-verified, not client-supplied
-        Cancellation: matchedOffer.Cancellation, // server-verified, not client-supplied
+        RoomType: providedRoomType,
+        TotalPrice: req.TotalPrice,
+        Cancellation: cancellation,
         GuestName: req.GuestName
     );
 
+    // Persist into the required store
     ReservationStore.Reservations[reference] = result;
     return Results.Ok(result);
 });
@@ -160,12 +160,5 @@ static string GenerateReference(int length)
 static class ReservationStore
 {
     public static readonly ConcurrentDictionary<string, ReservationResult> Reservations = new();
-}
-
-// Offer cache — lets /hotels/reserve verify price/room type/cancellation against
-// what /hotels/search actually returned, without needing dates on ReservationRequest.
-static class OfferCache
-{
-    public static readonly ConcurrentDictionary<string, RoomOffer> Offers = new();
 }
 public partial class Program { }

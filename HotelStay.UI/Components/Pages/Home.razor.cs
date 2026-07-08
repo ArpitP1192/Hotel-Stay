@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using HotelStay.Contracts.Models;
 using Microsoft.AspNetCore.Components;
 
 namespace HotelStay.UI.Components.Pages;
@@ -12,26 +14,14 @@ public partial class Home : ComponentBase
 {
     protected DateOnly CheckInDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     protected DateOnly CheckOutDate { get; set; } = DateOnly.FromDateTime(DateTime.Today).AddDays(1);
-
     protected string Destination { get; set; } = "London";
     protected string SelectedRoomTypeString { get; set; } = string.Empty;
-
-    // Results (PascalCase variable names)
     protected List<RoomOffer>? Offers { get; set; }
     protected RoomOffer? SelectedOffer { get; set; }
+    protected RoomOffer? BookedOfferSnapshot { get; set; }
 
-    // Booking state
-    protected ReservationRequest BookingModel { get; set; } = new ReservationRequest
-    {
-        OfferId = "",
-        GuestName = "",
-        DocumentType = DocumentType.Passport,
-        DocumentNumber = "",
-        Destination = "",
-        TotalPrice = 0m,
-        Provider = "",
-        RoomType = RoomType.Standard
-    };
+    // BookingModel now is a mutable view-model used for binding in the UI.
+    protected BookingViewModel BookingModel { get; set; } = new BookingViewModel();
     protected string? BookingError;
     protected string? BookingReference;
     protected bool ShowBookingModal; // success popup visibility
@@ -45,49 +35,44 @@ public partial class Home : ComponentBase
     // Search error (visible in the search UI)
     protected string? SearchError;
 
+    // UI sort: asc/desc for TotalPrice
+    protected bool SortDescending { get; set; } = false;
+
+    // Client-side city classification used for pre-flight validation
+    private static readonly HashSet<string> InternationalCities = new(StringComparer.OrdinalIgnoreCase) { "Paris", "Tokyo", "New York", "London" };
+    private static readonly HashSet<string> DomesticCities = new(StringComparer.OrdinalIgnoreCase) { "Delhi", "Bangalore" };
+
     [Inject] protected HttpClient Http { get; set; } = default!;
 
-    // Local models matching API
-    public enum RoomType { Standard, Deluxe, Suite }
-    public enum DocumentType { Passport, NationalId }
-    public enum CancellationPolicyType { FreeCancellation, Flexible, NonRefundable }
-
-    public record CancellationPolicy(CancellationPolicyType Type, int? HoursBeforeCheckIn);
-
-    public record RoomOffer(
-        string OfferId,
-        string Provider,
-        RoomType RoomType,
-        decimal RatePerNight,
-        decimal TotalPrice,
-        CancellationPolicy Cancellation,
-        string? Amenities,
-        int? StarRating
-    );
-
-    public class ReservationRequest
+    // Mutable view-model used by the UI to bind inputs.
+    public class BookingViewModel
     {
-        public string OfferId { get; set; }
-        public string GuestName { get; set; }
-        public DocumentType DocumentType { get; set; }
-        public string DocumentNumber { get; set; } // <-- Change 'init' to 'set'
-        public string Destination { get; set; }
-        public decimal TotalPrice { get; set; }
-        public string Provider { get; set; }
-        public RoomType RoomType { get; set; }
+        public string OfferId { get; set; } = "";
+        public string GuestName { get; set; } = "";
+        public DocumentType DocumentType { get; set; } = DocumentType.Passport;
+        public string DocumentNumber { get; set; } = "";
+        public string Destination { get; set; } = "";
+        public decimal TotalPrice { get; set; } = 0m;
+        public string Provider { get; set; } = "";
+        public RoomType RoomType { get; set; } = RoomType.Standard;
     }
 
-    public record ReservationResult(
-        string Reference,
-        DateTime ReservedAt,
-        string Provider,
-        RoomType RoomType,
-        decimal TotalPrice,
-        CancellationPolicy Cancellation,
-        string GuestName
-    );
+    protected void OnSortChanged(ChangeEventArgs e)
+    {
+        var v = e?.Value?.ToString();
+        SortDescending = string.Equals(v, "desc", StringComparison.OrdinalIgnoreCase);
+        ApplySort();
+    }
 
-    // Search
+    private void ApplySort()
+    {
+        if (Offers is null) return;
+        Offers = SortDescending
+            ? Offers.OrderByDescending(o => o.TotalPrice).ToList()
+            : Offers.OrderBy(o => o.TotalPrice).ToList();
+        StateHasChanged();
+    }
+
     protected async Task SearchAsync()
     {
         // clear state
@@ -97,7 +82,7 @@ public partial class Home : ComponentBase
         ShowConfirmModal = false;
         FoundReservation = null;
         LookupError = null;
-        SearchError = null; 
+        SearchError = null;
 
         if (string.IsNullOrWhiteSpace(Destination))
         {
@@ -144,8 +129,7 @@ public partial class Home : ComponentBase
         {
             var result = await Http.GetFromJsonAsync<List<RoomOffer>>(url);
             Offers = result ?? new List<RoomOffer>();
-            if (Offers.Count == 0)
-                SearchError = "No rooms available.";
+            ApplySort();
         }
         catch (Exception ex)
         {
@@ -154,11 +138,11 @@ public partial class Home : ComponentBase
         }
         StateHasChanged();
     }
-  
+
     protected void SelectOffer(RoomOffer offer)
     {
         SelectedOffer = offer;
-        BookingModel = new ReservationRequest
+        BookingModel = new BookingViewModel
         {
             OfferId = offer.OfferId,
             GuestName = "",
@@ -197,6 +181,17 @@ public partial class Home : ComponentBase
             StateHasChanged();
             return Task.CompletedTask;
         }
+
+        // Pre-flight document validation (UI): if destination is international require Passport
+        if (!string.IsNullOrWhiteSpace(BookingModel.Destination) &&
+            InternationalCities.Contains(BookingModel.Destination) &&
+            BookingModel.DocumentType != DocumentType.Passport)
+        {
+            BookingError = $"Passport is required for international destination '{BookingModel.Destination}'.";
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
         ShowConfirmModal = true;
         StateHasChanged();
         return Task.CompletedTask;
@@ -208,7 +203,19 @@ public partial class Home : ComponentBase
         ShowConfirmModal = false;
         try
         {
-            var resp = await Http.PostAsJsonAsync("/hotels/reserve", BookingModel);
+            // Map mutable view-model to immutable Contracts ReservationRequest
+            var request = new ReservationRequest(
+                OfferId: BookingModel.OfferId,
+                GuestName: BookingModel.GuestName,
+                DocumentType: BookingModel.DocumentType,
+                DocumentNumber: BookingModel.DocumentNumber,
+                Destination: BookingModel.Destination,
+                TotalPrice: BookingModel.TotalPrice,
+                Provider: BookingModel.Provider,
+                RoomType: BookingModel.RoomType
+            );
+
+            var resp = await Http.PostAsJsonAsync("/hotels/reserve", request);
             if (resp.StatusCode == HttpStatusCode.UnprocessableEntity)
             {
                 var payload = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
@@ -228,19 +235,11 @@ public partial class Home : ComponentBase
             var reservation = await resp.Content.ReadFromJsonAsync<ReservationResult>();
             if (reservation is not null)
             {
-                BookingReference = reservation.Reference;
-                ShowBookingModal = true; 
-                BookingModel = new ReservationRequest
-                {
-                    OfferId = "",
-                    GuestName = "",
-                    DocumentType = DocumentType.Passport,
-                    DocumentNumber = "",
-                    Destination = "",
-                    TotalPrice = 0m,
-                    Provider = "",
-                    RoomType = RoomType.Standard
-                };
+                BookingReference = reservation.ReferenceNumber;
+                // capture snapshot of the offer that was booked so success modal can show details
+                BookedOfferSnapshot = SelectedOffer;
+                ShowBookingModal = true;
+                BookingModel = new BookingViewModel();
                 SelectedOffer = null;
             }
         }
@@ -263,6 +262,7 @@ public partial class Home : ComponentBase
     {
         ShowBookingModal = false;
         BookingReference = null; // remove the reference when modal is closed
+        BookedOfferSnapshot = null; // clear snapshot
         StateHasChanged();
     }
 
@@ -279,7 +279,7 @@ public partial class Home : ComponentBase
 
         if (string.IsNullOrWhiteSpace(LookupReference))
         {
-            LookupError = "Reference is required.";
+            LookupError = "Reference Number is required.";
             return;
         }
 

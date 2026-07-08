@@ -1,8 +1,7 @@
-using System;
-namespace HotelStay.Api.Models;
+namespace HotelStay.Contracts.Models;
 
 public record ReservationResult(
-    string Reference,
+    string ReferenceNumber,
     DateTime ReservedAt,
     string Provider,
     RoomType RoomType,

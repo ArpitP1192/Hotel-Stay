@@ -1,4 +1,4 @@
-namespace HotelStay.Api.Models;
+namespace HotelStay.Contracts.Models;
 
 public enum CancellationPolicyType
 {

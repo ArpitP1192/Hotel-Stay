@@ -1,4 +1,4 @@
-namespace HotelStay.Api.Models;
+namespace HotelStay.Contracts.Models;
 public record ReservationRequest(
     string OfferId,
     string GuestName,

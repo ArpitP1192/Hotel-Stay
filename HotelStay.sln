@@ -12,8 +12,11 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
 	ProjectSection(SolutionItems) = preProject
 		prompts.md = prompts.md
+		reflection.md = reflection.md
 		spec.md = spec.md
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HotelStay.Contracts", "HotelStay.Contracts\HotelStay.Contracts.csproj", "{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -61,6 +64,18 @@ Global
 		{FFF75739-EB9C-4A7E-BEFF-4C0AC5181B32}.Release|x64.Build.0 = Release|Any CPU
 		{FFF75739-EB9C-4A7E-BEFF-4C0AC5181B32}.Release|x86.ActiveCfg = Release|Any CPU
 		{FFF75739-EB9C-4A7E-BEFF-4C0AC5181B32}.Release|x86.Build.0 = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|x64.Build.0 = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Debug|x86.Build.0 = Debug|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|x64.ActiveCfg = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|x64.Build.0 = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|x86.ActiveCfg = Release|Any CPU
+		{CAB025EA-2CFB-4CBB-B8D6-3A0A22C116AC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

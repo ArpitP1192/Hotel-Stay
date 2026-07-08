@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HotelStay.Api\HotelStay.Api.csproj" />
+    <ProjectReference Include="..\HotelStay.Contracts\HotelStay.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
